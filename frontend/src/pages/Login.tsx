@@ -1,17 +1,55 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 function Login() {
+  const navigate = useNavigate()
+  const [erro, setErro] = useState('')
+  const [carregando, setCarregando] = useState(false)
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
   const [mostrarSenha, setMostrarSenha] = useState(false)
   const [manterConectado, setManterConectado] = useState(true)
 
-  function handleLogin(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
+async function handleLogin(event: React.FormEvent<HTMLFormElement>) {
+  event.preventDefault()
 
-    // Vamos conectar o login ao back-end nas próximas etapas.
-    alert('A conexão com o servidor será adicionada em breve.')
+  setErro('')
+  setCarregando(true)
+
+  try {
+    const resposta = await fetch('http://localhost:3000/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email, senha }),
+    })
+
+    const dados = await resposta.json()
+
+    if (!resposta.ok) {
+      setErro(dados.mensagem || 'Não foi possível entrar.')
+      return
+    }
+
+    const armazenamento = manterConectado ? localStorage : sessionStorage
+
+    // Remove uma sessão anterior antes de salvar a nova.
+    localStorage.removeItem('nexo-token')
+    localStorage.removeItem('nexo-usuario')
+    sessionStorage.removeItem('nexo-token')
+    sessionStorage.removeItem('nexo-usuario')
+
+    armazenamento.setItem('nexo-token', dados.token)
+    armazenamento.setItem('nexo-usuario', JSON.stringify(dados.usuario))
+
+    navigate('/atendimento')
+  } catch {
+    setErro('Não foi possível conectar ao servidor. Verifique se ele está ligado.')
+  } finally {
+    setCarregando(false)
   }
+}
 
   return (
     <main className="min-h-screen lg:grid lg:grid-cols-[55%_45%]">
@@ -161,11 +199,18 @@ function Login() {
               Manter conectado neste computador
             </label>
 
+            {erro && (
+              <p role='alert' className="text-sm text-red-600">
+                {erro}
+              </p>
+            )}
+
             <button
               type="submit"
-              className="w-full rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
+              disabled={carregando}
+              className="w-full rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Entrar <span className="ml-2">→</span>
+              {carregando ? 'Entrando...' : 'Entrar'}
             </button>
           </form>
         </div>
