@@ -155,18 +155,33 @@ function Atendimento() {
         throw new Error(dados.mensagem || 'Não foi possível enviar a mensagem.')
       }
 
-      const mensagemSalva: Mensagem = await resposta.json()
+      const dados: { 
+        mensagem: Mensagem
+        respostaAgente: Mensagem | null
+        aviso: string | null
+      } = await resposta.json()
 
       setConversa((anterior) => {
         if (!anterior) return anterior
 
+        const novasMensagens = [dados.mensagem]
+
+        if (dados.respostaAgente) {
+          novasMensagens.push(dados.respostaAgente)
+        }
+
         return {
           ...anterior,
-          mensagens: [...anterior.mensagens, mensagemSalva],
+          mensagens: [...anterior.mensagens, ...novasMensagens],
         }
       })
 
       setTexto('')
+
+      if (dados.aviso) {
+        setErro(dados.aviso)
+      }
+
     } catch (erroCapturado) {
       setErro(
         erroCapturado instanceof Error
