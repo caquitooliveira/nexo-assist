@@ -98,7 +98,48 @@ async function main() {
     })
   }
 
-  console.log('Usuários e chamados de exemplo cadastrados com sucesso.')
+  const artigos = [
+  {
+    titulo: 'VPN com erro 809',
+    conteudo:
+      'No Windows 10, reinstale o cliente de VPN pelo portal de softwares e reinicie o computador. No Windows 11, abra um chamado para o suporte.',
+  },
+  {
+    titulo: 'Horário do service desk',
+    conteudo:
+      'O atendimento funciona de segunda a sexta-feira, das 8h às 18h. Chamados críticos têm plantão 24 horas.',
+  },
+  {
+    titulo: 'Redefinição da senha de rede',
+    conteudo:
+      'Acesse o portal de senhas da Nexo e siga as instruções para redefinir sua senha de rede. Se não conseguir acessar o portal, solicite ajuda ao service desk.',
+  },
+  {
+    titulo: 'Instalação de softwares',
+    conteudo:
+      'Acesse o portal de softwares da Nexo para instalar aplicativos já aprovados. Para solicitar um programa que não está disponível, abra uma requisição.',
+  },
+  {
+    titulo: 'E-mail não sincroniza',
+    conteudo:
+      'Verifique sua conexão com a internet e reinicie o aplicativo de e-mail. Se o problema continuar, procure o service desk.',
+  },
+  {
+    titulo: 'Acesso à rede Wi-Fi',
+    conteudo:
+      'Selecione a rede corporativa Nexo e entre com suas credenciais de rede. Se não conseguir conectar, entre em contato com o service desk.',
+  },
+]
+
+for (const artigo of artigos) {
+  await prisma.artigo.upsert({
+    where: { titulo: artigo.titulo },
+    update: { conteudo: artigo.conteudo },
+    create: artigo,
+  })
+}
+
+  console.log('Usuários, chamados e artigos de exemplo cadastrados.')
 }
 
 main()

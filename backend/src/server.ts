@@ -5,6 +5,11 @@ import express from 'express'
 import jwt from 'jsonwebtoken'
 import { autenticar, type UsuarioAutenticado } from './auth'
 import { listarChamadosDoUsuario } from './services/chamados'
+import {
+  adicionarMensagem,
+  obterOuCriarConversa,
+} from './services/conversas'
+import { buscarArtigos } from './services/artigos'
 
 const app = express()
 const prisma = new PrismaClient()
@@ -114,6 +119,96 @@ app.get('/chamados', autenticar, async (_request, response) => {
 
     return response.status(500).json({
       mensagem: 'Não foi possível consultar os chamados.',
+    })
+  }
+})
+
+app.post('/conversas/atual', autenticar, async (_request, response) => {
+  const { id } = response.locals.usuario as UsuarioAutenticado
+
+  try {
+    const conversa = await obterOuCriarConversa(prisma, id)
+    return response.json(conversa)
+  } catch (erro) {
+    console.error('Erro ao carregar conversa:', erro)
+
+    return response.status(500).json({
+      mensagem: 'Não foi possível carregar a conversa.',
+    })
+  }
+})
+
+app.post('/conversas/:id/mensagens', autenticar, async (request, response) => {
+  const { id: usuarioId } = response.locals.usuario as UsuarioAutenticado
+  const { texto } = request.body as { texto?: unknown }
+  const conversaId = request.params.id
+
+  if (typeof texto !== 'string' || !texto.trim()) {
+    return response.status(400).json({
+      mensagem: 'Digite uma mensagem.',
+    })
+  }
+
+  if (texto.trim().length > 2000) {
+    return response.status(400).json({
+      mensagem: 'A mensagem deve ter no máximo 2.000 caracteres.',
+    })
+  }
+
+  try {
+    const resultado = await adicionarMensagem(
+      prisma,
+      usuarioId,
+      conversaId,
+      texto.trim(),
+    )
+
+    if ('erro' in resultado) {
+      if (resultado.erro === 'CONVERSA_NAO_ENCONTRADA') {
+        return response.status(404).json({
+          mensagem: 'Conversa não encontrada.',
+        })
+      }
+
+      return response.status(400).json({
+        mensagem: 'Você atingiu o limite de 30 mensagens nesta conversa.',
+      })
+    }
+
+    return response.status(201).json(resultado.mensagem)
+  } catch (erro) {
+    console.error('Erro ao enviar mensagem:', erro)
+
+    return response.status(500).json({
+      mensagem: 'Não foi possível enviar a mensagem.',
+    })
+  }
+})
+
+app.get('/artigos', autenticar, async (request, response) => {
+  const busca = request.query.busca
+
+  if (typeof busca !== 'string' || !busca.trim()) {
+    return response.status(400).json({
+      mensagem: 'Informe um termo para buscar na central de ajuda.',
+    })
+  }
+
+  if (busca.length > 500) {
+    return response.status(400).json({
+      mensagem: 'A busca deve ter no máximo 500 caracteres.',
+    })
+  }
+
+  try {
+    const artigos = await buscarArtigos(prisma, busca)
+
+    return response.json(artigos)
+  } catch (erro) {
+    console.error('Erro ao buscar artigos:', erro)
+
+    return response.status(500).json({
+      mensagem: 'Não foi possível consultar a central de ajuda.',
     })
   }
 })
