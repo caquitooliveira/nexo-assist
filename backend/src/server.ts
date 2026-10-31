@@ -11,8 +11,9 @@ import {
   obterOuCriarConversa,
 } from './services/conversas'
 import { responderConversa } from './services/respostas'
-import { confirmarRascunho } from './services/confirmacao'
+import { confirmarRascunho, confirmacaoSchema, } from './services/confirmacao'
 import { cancelarRascunho, editarRascunho, edicaoRascunhoSchema, } from './services/rascunhos'
+
 
 
 const app = express()
@@ -401,18 +402,29 @@ app.post(
       })
     }
 
+    const validacao = confirmacaoSchema.safeParse(request.body)
+
+    if (!validacao.success) {
+      return response.status(400).json({
+        mensagem: 'Os dados da confirmação estão incompletos ou inválidos.',
+      })
+    }
+
     try {
       const resultado = await confirmarRascunho(
         prisma,
         usuarioId,
         conversaId,
         rascunhoId,
+        validacao.data,
       )
 
       switch (resultado.status) {
         case 'CRIADO':
           return response.status(201).json(resultado)
 
+        case 'ATUALIZADO':
+        case 'REABERTO':
         case 'JA_CONFIRMADO':
           return response.json(resultado)
 
@@ -420,7 +432,19 @@ app.post(
           return response.status(409).json({
             ...resultado,
             mensagem:
-              'Existem chamados que precisam ser revisados antes de criar outro.',
+              'Revise os chamados encontrados antes de confirmar.',
+          })
+
+        case 'RASCUNHO_ALTERADO':
+          return response.status(409).json({
+            mensagem:
+              'O rascunho mudou. Recarregue a página e confira os dados.',
+          })
+
+        case 'CHAMADO_ALTERADO':
+          return response.status(409).json({
+            mensagem:
+              'O chamado mudou ou não pode mais ser usado. Revise novamente.',
           })
 
         case 'CONVERSA_INDISPONIVEL':
@@ -438,7 +462,7 @@ app.post(
 
       return response.status(500).json({
         mensagem:
-          'Não foi possível confirmar o chamado. Consulte o estado antes de tentar novamente.',
+          'Não foi possível concluir a confirmação. Consulte o estado antes de tentar novamente.',
       })
     }
   },

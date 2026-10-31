@@ -35,6 +35,7 @@ model Chamado {
   usuario           Usuario  @relation(fields: [usuarioId], references: [id])
 
   origemRascunhoId String? @unique
+  confirmacoes ConfirmacaoRascunho[]
 
   @@index([usuarioId])
 }
@@ -104,4 +105,17 @@ model RascunhoChamado {
 
   conversaId   String   @unique
   conversa     Conversa @relation(fields: [conversaId], references: [id])
+}
+
+model ConfirmacaoRascunho {
+  id         String   @id @default(cuid())
+  rascunhoId String   @unique
+  conversaId String
+  acao       String
+  criadoEm   DateTime @default(now())
+
+  chamadoId  String
+  chamado    Chamado  @relation(fields: [chamadoId], references: [id])
+
+  @@index([conversaId])
 }
