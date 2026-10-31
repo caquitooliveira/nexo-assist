@@ -13,10 +13,15 @@ export async function obterOuCriarConversa(
     },
     orderBy: { atualizadoEm: 'desc' },
     include: {
-      mensagens: {
+  mensagens: {
+    orderBy: { criadoEm: 'asc' },
+    include: {
+      acoes: {
         orderBy: { criadoEm: 'asc' },
       },
     },
+  },
+},
   })
 
   if (conversaExistente) {

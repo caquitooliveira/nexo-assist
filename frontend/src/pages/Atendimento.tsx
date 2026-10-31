@@ -7,10 +7,21 @@ type Usuario = {
   email: string
 }
 
+type AcaoAgente = {
+  id: string
+  nome: string
+  entrada: string
+  resultado: string
+}
+
 type Mensagem = {
   id: string
   autor: string
   texto: string
+  entendimento?: string | null
+  justificativa?: string | null
+  seguranca?: 'ALTA' | 'MEDIA' | 'BAIXA' | null
+  acoes?: AcaoAgente[]
 }
 
 type Conversa = {
@@ -152,10 +163,13 @@ function Atendimento() {
 
       if (!resposta.ok) {
         const dados: { mensagem?: string } = await resposta.json()
-        throw new Error(dados.mensagem || 'Não foi possível enviar a mensagem.')
+
+        throw new Error(
+          dados.mensagem || 'Não foi possível enviar a mensagem.',
+        )
       }
 
-      const dados: { 
+      const dados: {
         mensagem: Mensagem
         respostaAgente: Mensagem | null
         aviso: string | null
@@ -181,7 +195,6 @@ function Atendimento() {
       if (dados.aviso) {
         setErro(dados.aviso)
       }
-
     } catch (erroCapturado) {
       setErro(
         erroCapturado instanceof Error
@@ -204,7 +217,7 @@ function Atendimento() {
   if (!usuario || !conversa) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
-        <p className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-red-600">
           {erro || 'Não foi possível carregar o atendimento.'}
         </p>
 
@@ -239,6 +252,7 @@ function Atendimento() {
 
         <div className="mt-auto border-t border-slate-200 pt-4">
           <p className="text-sm font-medium">{usuario.nome}</p>
+
           <p className="mt-1 break-all text-xs text-slate-500">
             {usuario.email}
           </p>
@@ -257,7 +271,9 @@ function Atendimento() {
         <header className="flex h-16 items-center justify-between border-b border-slate-200 px-6">
           <p className="text-xs text-slate-500">
             Service desk de TI <span className="mx-2">›</span>
-            <span className="font-medium text-slate-800">Atendimento</span>
+            <span className="font-medium text-slate-800">
+              Atendimento
+            </span>
           </p>
 
           <span className="rounded-full bg-blue-50 px-3 py-1 text-xs text-blue-700">
@@ -266,7 +282,10 @@ function Atendimento() {
         </header>
 
         <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6">
-          <div aria-live="polite" className="flex flex-1 flex-col gap-5 py-8">
+          <div
+            aria-live="polite"
+            className="flex flex-1 flex-col gap-5 py-8"
+          >
             {conversa.mensagens.length === 0 && (
               <p className="text-sm text-slate-500">
                 Descreva como podemos ajudar com seu problema de TI.
@@ -274,7 +293,10 @@ function Atendimento() {
             )}
 
             {conversa.mensagens.map((mensagem) => {
-              const enviadaPeloFuncionario = mensagem.autor === 'FUNCIONARIO'
+              const enviadaPeloFuncionario =
+                mensagem.autor === 'FUNCIONARIO'
+
+              const acoes = mensagem.acoes ?? []
 
               return (
                 <div
@@ -293,11 +315,92 @@ function Atendimento() {
                     </p>
                   )}
 
+                  {mensagem.autor === 'ASSISTENTE' &&
+  mensagem.entendimento &&
+  mensagem.justificativa &&
+  mensagem.seguranca && (
+    <details className="mb-2 rounded-lg border border-blue-100 bg-blue-50/50 px-3 py-2">
+      <summary className="cursor-pointer text-xs font-medium text-blue-700">
+        Ver detalhes da decisão
+      </summary>
+
+      <div className="mt-3 space-y-3 text-xs leading-5 text-slate-600">
+        <div>
+          <p className="font-semibold text-slate-700">
+            O que entendeu
+          </p>
+          <p>{mensagem.entendimento}</p>
+        </div>
+
+        <div>
+          <p className="font-semibold text-slate-700">
+            Justificativa
+          </p>
+          <p>{mensagem.justificativa}</p>
+        </div>
+
+        <div>
+          <p className="font-semibold text-slate-700">
+            Segurança declarada pelo agente
+          </p>
+
+          <p>
+            {mensagem.seguranca === 'ALTA'
+              ? 'Alta'
+              : mensagem.seguranca === 'MEDIA'
+                ? 'Média'
+                : 'Baixa'}
+          </p>
+
+          <p className="mt-1 text-slate-500">
+            Autoavaliação do modelo, não uma garantia de acerto.
+          </p>
+        </div>
+      </div>
+    </details>
+  )}
+
+                  {mensagem.autor === 'ASSISTENTE' &&
+                    acoes.length > 0 && (
+                      <details className="mb-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                        <summary className="cursor-pointer text-xs text-slate-600">
+                          {acoes.map((acao) => acao.nome).join(' · ')}
+                        </summary>
+
+                        <div className="mt-3 space-y-3">
+                          {acoes.map((acao) => (
+                            <div
+                              key={acao.id}
+                              className="border-t border-slate-200 pt-3 text-xs leading-5"
+                            >
+                              <p className="font-semibold text-slate-700">
+                                {acao.nome}
+                              </p>
+
+                              <p className="mt-1 text-slate-600">
+                                <span className="font-medium">
+                                  Consulta:{' '}
+                                </span>
+                                {acao.entrada}
+                              </p>
+
+                              <p className="mt-1 text-slate-600">
+                                <span className="font-medium">
+                                  Resultado:{' '}
+                                </span>
+                                {acao.resultado}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+
                   <div
                     className={
                       enviadaPeloFuncionario
-                        ? 'rounded-xl bg-slate-800 px-4 py-3 text-sm text-white'
-                        : 'rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm'
+                        ? 'whitespace-pre-wrap break-words rounded-xl bg-slate-800 px-4 py-3 text-sm text-white'
+                        : 'whitespace-pre-wrap break-words rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm'
                     }
                   >
                     {mensagem.texto}
@@ -306,6 +409,12 @@ function Atendimento() {
               )
             })}
           </div>
+
+          {enviando && (
+            <p role="status" className="mb-3 text-sm text-slate-500">
+              Nexo está processando sua mensagem...
+            </p>
+          )}
 
           {erro && (
             <p role="alert" className="mb-2 text-sm text-red-600">
@@ -342,7 +451,7 @@ function Atendimento() {
               disabled={enviando || limiteAtingido || !texto.trim()}
               className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {enviando ? 'Enviando...' : 'Enviar'}
+              {enviando ? 'Aguarde...' : 'Enviar'}
             </button>
           </form>
 

@@ -52,13 +52,19 @@ model Conversa {
 }
 
 model Mensagem {
-  id         String   @id @default(cuid())
-  autor      String
-  texto      String
-  criadoEm   DateTime @default(now())
+  id            String   @id @default(cuid())
+  autor         String
+  texto         String
+  criadoEm      DateTime @default(now())
 
-  conversaId String
-  conversa   Conversa @relation(fields: [conversaId], references: [id])
+  entendimento  String?
+  justificativa String?
+  seguranca     String?
+
+  conversaId    String
+  conversa      Conversa @relation(fields: [conversaId], references: [id])
+
+  acoes         AcaoAgente[]
 
   @@index([conversaId])
 }
@@ -66,4 +72,17 @@ model Artigo {
   id       String @id @default(cuid())
   titulo   String @unique
   conteudo String
+}
+
+model AcaoAgente {
+  id         String   @id @default(cuid())
+  nome       String
+  entrada    String
+  resultado  String
+  criadoEm   DateTime @default(now())
+
+  mensagemId String
+  mensagem   Mensagem @relation(fields: [mensagemId], references: [id])
+
+  @@index([mensagemId])
 }
