@@ -1,6 +1,8 @@
+import TextoMensagem from '../components/TextoMensagem'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import CartaoRascunho from '../components/CartaoRascunho'
+import PainelChamados from '../components/PainelChamados'
 import AtendimentoHumano from '../components/AtendimentoHumano'
 import { useSincronizarConversa } from '../hooks/useSincronizarConversa'
 
@@ -84,6 +86,7 @@ function Atendimento() {
   const [carregando, setCarregando] = useState(true)
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
+  const [progresso, setProgresso] = useState('')
 
   const erroSincronizacao = useSincronizarConversa({
     conversa,
@@ -202,6 +205,7 @@ function Atendimento() {
 
     setErro('')
     setEnviando(true)
+    setProgresso('Nexo está analisando sua mensagem...')
 
     try {
       const resposta = await fetch(
@@ -211,6 +215,7 @@ function Atendimento() {
           headers: {
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',
+            Accept: 'application/x-ndjson',
           },
           body: JSON.stringify({ texto: textoLimpo }),
         },
@@ -223,45 +228,41 @@ function Atendimento() {
       }
 
       if (!resposta.ok) {
-        const dados: { mensagem?: string } =
-          await resposta.json()
-
-        throw new Error(
-          dados.mensagem || 'Não foi possível enviar a mensagem.',
-        )
+        const dados = await resposta.json() as { mensagem?: string }
+        throw new Error(dados.mensagem || 'Não foi possível enviar a mensagem.')
       }
-
-      const dados: {
-        mensagem: Mensagem
-        respostaAgente: Mensagem | null
-        aviso: string | null
-      } = await resposta.json()
-
-      setConversa((anterior) => {
-        if (!anterior || anterior.id !== conversaId) {
-          return anterior
+      if (!resposta.body) throw new Error('O servidor não retornou a resposta.')
+      const leitor = resposta.body.getReader()
+      const decoder = new TextDecoder()
+      let pendente = ''
+      let concluido = false
+      const receber = (linha: string) => {
+        if (!linha.trim()) return
+        const evento = JSON.parse(linha) as {
+          tipo: string; mensagem?: Mensagem; respostaAgente?: Mensagem | null
+          texto?: string; aviso?: string
         }
-
-        const novasMensagens = [dados.mensagem]
-
-        if (dados.respostaAgente) {
-          novasMensagens.push(dados.respostaAgente)
-        }
-
-        return {
-          ...anterior,
-          mensagens: adicionarMensagens(
-            anterior.mensagens,
-            novasMensagens,
-          ),
-        }
-      })
-
-      setTexto('')
-
-      if (dados.aviso) {
-        setErro(dados.aviso)
+        if (evento.tipo === 'progresso') setProgresso(evento.texto ?? '')
+        if (evento.tipo === 'mensagem') setTexto('')
+        if (evento.tipo === 'falha') { setErro(evento.aviso ?? 'Falha ao responder.'); concluido = true }
+        if (evento.tipo === 'concluido') concluido = true
+        const mensagem = evento.mensagem ?? evento.respostaAgente
+        if (mensagem) setConversa((anterior) => {
+          if (!anterior || anterior.id !== conversaId) return anterior
+          return { ...anterior, mensagens: adicionarMensagens(anterior.mensagens, [mensagem]) }
+        })
       }
+      while (true) {
+        const { value, done } = await leitor.read()
+        pendente += decoder.decode(value, { stream: !done })
+        const linhas = pendente.split('\n')
+        pendente = linhas.pop() ?? ''
+        linhas.forEach(receber)
+        if (done) break
+      }
+      receber(pendente)
+      if (!concluido) throw new Error('Conexão interrompida. Recarregue para conferir as mensagens salvas antes de reenviar.')
+
     } catch (erroCapturado) {
       setErro(
         erroCapturado instanceof Error
@@ -271,6 +272,22 @@ function Atendimento() {
     } finally {
       setEnviando(false)
     }
+  }
+
+  async function tentarResposta() {
+    if (!conversa || enviando) return
+    setEnviando(true)
+    setErro('')
+    try {
+      const resposta = await fetch(`${API_URL}/conversas/${conversa.id}/responder`, {
+        method: 'POST', headers: { Authorization: `Bearer ${obterToken()}` },
+      })
+      const dados = await resposta.json()
+      if (!resposta.ok) throw new Error(dados.mensagem || 'Não foi possível responder agora.')
+      setConversa((atual) => atual ? { ...atual, mensagens: adicionarMensagens(atual.mensagens, [dados as Mensagem]) } : atual)
+    } catch (erro) {
+      setErro(erro instanceof Error ? erro.message : 'Não foi possível responder agora.')
+    } finally { setEnviando(false) }
   }
 
   if (carregando) {
@@ -309,7 +326,7 @@ function Atendimento() {
 
   return (
     <div className="flex min-h-screen bg-white text-slate-800">
-      <aside className="flex w-56 shrink-0 flex-col border-r border-slate-200 p-4">
+      <aside className="hidden w-56 shrink-0 sm:flex flex-col border-r border-slate-200 p-4">
         <div className="mb-10 flex items-center gap-2 text-sm font-bold">
           <span className="text-2xl font-black text-blue-600">
             N
@@ -375,7 +392,7 @@ function Atendimento() {
                     key={mensagem.id}
                     className="text-center text-xs leading-5 text-slate-500"
                   >
-                    {mensagem.texto}
+                    <TextoMensagem texto={mensagem.texto} />
                   </p>
                 )
               }
@@ -490,7 +507,7 @@ function Atendimento() {
                           : 'whitespace-pre-wrap break-words rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm'
                     }
                   >
-                    {mensagem.texto}
+                    <TextoMensagem texto={mensagem.texto} />
                   </div>
                 </div>
               )
@@ -503,11 +520,22 @@ function Atendimento() {
               className="mb-3 text-sm text-slate-500"
             >
               {comAgente
-                ? 'Nexo está processando sua mensagem...'
+                ? progresso || 'Nexo está processando sua mensagem...'
                 : 'Enviando mensagem...'}
             </p>
           )}
 
+          {comAgente && conversa.mensagens.at(-1)?.autor === 'FUNCIONARIO' && !enviando && (
+            <button type="button" onClick={() => void tentarResposta()} className="mb-4 rounded-lg border border-blue-200 px-3 py-2 text-sm text-blue-700">Tentar responder novamente</button>
+          )}
+          <PainelChamados token={obterToken()} atualizacao={conversa.mensagens.length} desabilitado={enviando || encerrada || limiteAtingido} onSelecionar={setTexto} />
+          {comAgente && !enviando && !encerrada && !limiteAtingido && (
+            <div className="mb-4 flex flex-wrap gap-2">
+              {['Uso Windows 10.', 'Uso Windows 11.', 'Somente eu sou afetado.', 'Toda a equipe está afetada.', 'Não consigo trabalhar e não tenho alternativa.', 'Tenho uma alternativa para continuar.', 'É um pedido sem urgência.'].map((opcao) => (
+                <button key={opcao} type="button" onClick={() => setTexto(opcao)} className="rounded-full border border-slate-200 px-3 py-1 text-xs hover:bg-blue-50">{opcao}</button>
+              ))}
+            </div>
+          )}
           {comAgente && (
             <CartaoRascunho
               key={conversa.id}

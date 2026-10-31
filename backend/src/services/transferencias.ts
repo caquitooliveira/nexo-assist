@@ -1,9 +1,19 @@
 import type { PrismaClient } from '@prisma/client'
+import type { DecisaoAgente } from '../agente/decisao'
+import type { RegistroAcao } from '../agente/nexoAgent'
+import type { Encaminhamento } from './encaminhamento'
+
+type OpcoesTransferencia = {
+  encaminhamento?: Encaminhamento
+  decisao?: DecisaoAgente
+  acoes?: RegistroAcao[]
+}
 
 export async function transferirParaAnalista(
   prisma: PrismaClient,
   usuarioId: string,
   conversaId: string,
+  opcoes: OpcoesTransferencia = {},
 ) {
   return prisma.$transaction(async (transacao) => {
     const conversa = await transacao.conversa.findFirst({
@@ -41,6 +51,10 @@ export async function transferirParaAnalista(
       return { status: 'ESTADO_INVALIDO' } as const
     }
 
+    const motivo =
+      opcoes.encaminhamento?.justificativa ??
+      'O funcionário solicitou atendimento humano.'
+
     const historico = [...conversa.mensagens]
       .reverse()
       .map((mensagem) => {
@@ -49,16 +63,24 @@ export async function transferirParaAnalista(
             ? 'Funcionário'
             : mensagem.autor === 'ANALISTA'
               ? 'Analista'
-              : 'Assistente'
+              : mensagem.autor === 'SISTEMA'
+                ? 'Sistema'
+                : 'Assistente'
 
         return `${autor}: ${mensagem.texto.slice(0, 600)}`
       })
       .join('\n\n')
 
-    const resumo =
-      'Motivo: transferência solicitada pelo funcionário.\n\n' +
-      'Últimas mensagens da conversa:\n\n' +
-      historico
+    const entendimento = opcoes.decisao?.entendimento
+
+    const resumo = [
+      `Motivo: ${motivo}`,
+      entendimento ? `Solicitação: ${entendimento}` : '',
+      'Últimas mensagens da conversa:',
+      historico,
+    ]
+      .filter(Boolean)
+      .join('\n\n')
 
     const atualizacao = await transacao.conversa.updateMany({
       where: {
@@ -68,6 +90,7 @@ export async function transferirParaAnalista(
       },
       data: {
         status: 'AGUARDANDO_ANALISTA',
+        analistaId: null,
         resumo,
       },
     })
@@ -81,19 +104,28 @@ export async function transferirParaAnalista(
         conversaId,
         autor: 'ASSISTENTE',
         texto:
+          `${motivo}\n\n` +
           'Sua conversa foi encaminhada e aguarda um analista. ' +
           'O Nexo Assist ficará pausado durante o atendimento humano.',
+        entendimento: entendimento ?? null,
+        justificativa: motivo,
+        seguranca: opcoes.decisao?.seguranca ?? null,
         acoes: {
-          create: {
-            nome: 'Encaminhou para um analista',
-            entrada: 'Solicitação do funcionário.',
-            resultado:
-              'Conversa aguardando analista, com o assistente pausado.',
-          },
+          create: [
+            ...(opcoes.acoes ?? []),
+            {
+              nome: 'Encaminhou para um analista',
+              entrada: motivo,
+              resultado:
+                'Conversa aguardando analista, com o assistente pausado.',
+            },
+          ],
         },
       },
       include: {
-        acoes: true,
+        acoes: {
+          orderBy: { criadoEm: 'asc' },
+        },
       },
     })
 

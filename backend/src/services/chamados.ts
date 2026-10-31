@@ -1,3 +1,4 @@
+import { verificarDisponibilidadeChamados } from './disponibilidade'
 import type { PrismaClient } from '@prisma/client'
 import { calcularPrazo } from './prazos'
 
@@ -5,6 +6,7 @@ export async function listarChamadosDoUsuario(
   prisma: PrismaClient,
   usuarioId: string,
 ) {
+  verificarDisponibilidadeChamados()
   const chamados = await prisma.chamado.findMany({
     where: {
       usuarioId,

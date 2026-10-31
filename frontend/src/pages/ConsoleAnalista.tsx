@@ -1,3 +1,4 @@
+import TextoMensagem from '../components/TextoMensagem'
 import {
   useCallback,
   useEffect,
@@ -573,7 +574,7 @@ function ConsoleAnalista() {
                         key={mensagem.id}
                         className="text-center text-xs text-slate-500"
                       >
-                        {mensagem.texto}
+                        <TextoMensagem texto={mensagem.texto} />
                       </p>
                     )
                   }
@@ -605,7 +606,7 @@ function ConsoleAnalista() {
                               : 'border-blue-100 bg-blue-50'
                         }`}
                       >
-                        {mensagem.texto}
+                        <TextoMensagem texto={mensagem.texto} />
                       </div>
                     </div>
                   )

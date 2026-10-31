@@ -6,7 +6,8 @@ export async function obterOuCriarConversa(
   prisma: PrismaClient,
   usuarioId: string,
 ) {
-  const conversaExistente = await prisma.conversa.findFirst({
+  return prisma.$transaction(async (transacao) => {
+  const conversaExistente = await transacao.conversa.findFirst({
     where: {
       usuarioId,
       status: { not: 'ENCERRADA' },
@@ -28,7 +29,7 @@ export async function obterOuCriarConversa(
     return conversaExistente
   }
 
-  return prisma.conversa.create({
+  return transacao.conversa.create({
     data: {
       usuarioId,
       status: 'COM_AGENTE',
@@ -36,6 +37,7 @@ export async function obterOuCriarConversa(
     include: {
       mensagens: true,
     },
+  })
   })
 }
 

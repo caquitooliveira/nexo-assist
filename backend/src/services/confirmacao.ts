@@ -1,3 +1,4 @@
+import { verificarDisponibilidadeChamados } from './disponibilidade'
 import { randomUUID } from 'node:crypto'
 import { Prisma, type PrismaClient } from '@prisma/client'
 import { z } from 'zod'
@@ -42,6 +43,7 @@ export async function confirmarRascunho(
   rascunhoId: string,
   dados: DadosConfirmacao,
 ) {
+  verificarDisponibilidadeChamados()
   try {
     return await prisma.$transaction(async (transacao) => {
       const conversa = await transacao.conversa.findFirst({

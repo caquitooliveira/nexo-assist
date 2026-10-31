@@ -138,7 +138,7 @@ async function handleLogin(event: React.FormEvent<HTMLFormElement>) {
         <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center py-14">
           <h2 className="font-serif text-3xl">Entrar</h2>
           <p className="mt-2 text-sm text-slate-500">
-            Use seu e-mail corporativo e a senha da rede Nexo.
+            Demonstração: use um e-mail cadastrado e qualquer senha preenchida.
           </p>
 
           <form onSubmit={handleLogin} className="mt-8 space-y-5">

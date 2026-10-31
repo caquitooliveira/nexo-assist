@@ -4,11 +4,14 @@ import {
   criarNexoAgent,
   type RegistroAcao,
 } from '../agente/nexoAgent'
+import { avaliarEncaminhamento } from './encaminhamento'
+import { transferirParaAnalista } from './transferencias'
 
-export async function responderConversa(
+async function gerarResposta(
   prisma: PrismaClient,
   usuarioId: string,
   conversaId: string,
+  informarProgresso?: (acao: RegistroAcao) => void,
 ) {
   const conversa = await prisma.conversa.findFirst({
     where: {
@@ -44,13 +47,14 @@ export async function responderConversa(
   const acoes: RegistroAcao[] = []
 
   const agente = criarNexoAgent(
-  prisma,
-  usuarioId,
-  (acao) => {
-    acoes.push(acao)
-  },
-  conversaId,
-)
+    prisma,
+    usuarioId,
+    (acao) => {
+      acoes.push(acao)
+      informarProgresso?.(acao)
+    },
+    conversaId,
+  )
 
   const sinal = AbortSignal.timeout(60_000)
 
@@ -59,7 +63,7 @@ export async function responderConversa(
     abortSignal: sinal,
     modelSettings: {
       maxRetries: 0,
-      maxOutputTokens: 1024,
+      maxOutputTokens: 1536,
     },
     structuredOutput: {
       schema: decisaoSchema,
@@ -70,14 +74,44 @@ export async function responderConversa(
 
   sinal.throwIfAborted()
 
-  if (resultado.finishReason === 'aborted') {
-    throw new Error('A geração da resposta foi cancelada.')
+  if (
+    resultado.finishReason === 'aborted' ||
+    resultado.finishReason === 'length'
+  ) {
+    throw new Error('O agente não concluiu uma resposta completa.')
   }
 
   const decisao = decisaoSchema.parse(resultado.object)
 
   if (!decisao.texto.trim()) {
     throw new Error('O agente não retornou uma resposta completa.')
+  }
+
+  const encaminhamento = await avaliarEncaminhamento(
+    prisma,
+    usuarioId,
+    decisao,
+  )
+
+  if (encaminhamento) {
+    const transferencia = await transferirParaAnalista(
+      prisma,
+      usuarioId,
+      conversaId,
+      {
+        encaminhamento,
+        decisao,
+        acoes,
+      },
+    )
+
+    if (transferencia.status === 'ENCAMINHADA') {
+      return transferencia.mensagem
+    }
+
+    // A conversa pode ter sido assumida, transferida ou encerrada
+    // enquanto o modelo estava processando.
+    return null
   }
 
   return prisma.$transaction(async (transacao) => {
@@ -92,6 +126,12 @@ export async function responderConversa(
     if (!conversaAtual) {
       return null
     }
+
+    const ultimaMensagem = await transacao.mensagem.findFirst({
+      where: { conversaId }, orderBy: { criadoEm: 'desc' },
+    })
+    // Não publique uma resposta baseada num histórico ultrapassado.
+    if (ultimaMensagem?.id !== conversa.mensagens.at(-1)?.id) return null
 
     const mensagem = await transacao.mensagem.create({
       data: {
@@ -119,4 +159,19 @@ export async function responderConversa(
 
     return mensagem
   })
+}
+const respostasEmAndamento = new Set<string>()
+export async function responderConversa(
+  prisma: PrismaClient,
+  usuarioId: string,
+  conversaId: string,
+  informarProgresso?: (acao: RegistroAcao) => void,
+) {
+  if (respostasEmAndamento.has(conversaId)) return null
+  respostasEmAndamento.add(conversaId)
+  try {
+    return await gerarResposta(prisma, usuarioId, conversaId, informarProgresso)
+  } finally {
+    respostasEmAndamento.delete(conversaId)
+  }
 }

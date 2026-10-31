@@ -35,7 +35,7 @@ import { transferirParaAnalista } from './services/transferencias'
 
 const app = express()
 const prisma = new PrismaClient()
-const PORT = 3000
+const PORT = Number(process.env.PORT || 3000)
 
 const conversasEmRetentativa = new Set<string>()
 const jwtSecret = process.env.JWT_SECRET
@@ -260,6 +260,31 @@ app.post(
           mensagem:
             'Você atingiu o limite de 30 mensagens nesta conversa.',
         })
+      }
+
+      if (request.accepts('application/x-ndjson') &&
+          request.get('Accept')?.includes('application/x-ndjson')) {
+        response.status(201)
+        response.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8')
+        response.setHeader('Cache-Control', 'no-cache, no-transform')
+        response.flushHeaders()
+        const emitir = (evento: object) => {
+          if (!response.destroyed) response.write(JSON.stringify(evento) + '\n')
+        }
+        emitir({ tipo: 'mensagem', mensagem: resultado.mensagem })
+        try {
+          const respostaAgente = await responderConversa(
+            prisma, usuarioId, conversaId,
+            (acao) => emitir({ tipo: 'progresso', texto: acao.nome }),
+          )
+          emitir({ tipo: 'concluido', respostaAgente })
+        } catch (erro) {
+          console.error('Falha ao gerar resposta do agente:', erro)
+          emitir({ tipo: 'falha', aviso: 'Sua mensagem foi salva, mas o assistente não conseguiu responder agora. Tente responder novamente.' })
+        } finally {
+          response.end()
+        }
+        return
       }
 
       try {
