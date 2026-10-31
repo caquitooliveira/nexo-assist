@@ -43,9 +43,14 @@ export async function responderConversa(
 
   const acoes: RegistroAcao[] = []
 
-  const agente = criarNexoAgent(prisma, usuarioId, (acao) => {
+  const agente = criarNexoAgent(
+  prisma,
+  usuarioId,
+  (acao) => {
     acoes.push(acao)
-  })
+  },
+  conversaId,
+)
 
   const sinal = AbortSignal.timeout(60_000)
 

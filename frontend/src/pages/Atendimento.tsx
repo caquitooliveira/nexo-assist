@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
+import CartaoRascunho from '../components/CartaoRascunho'
 
 type Usuario = {
   id: string
@@ -415,6 +416,23 @@ function Atendimento() {
               Nexo está processando sua mensagem...
             </p>
           )}
+
+          <CartaoRascunho
+  key={conversa.id}
+  conversaId={conversa.id}
+  token={obterToken()}
+  atualizacao={conversa.mensagens.length}
+  onMensagemSalva={(mensagem) => {
+    setConversa((anterior) => {
+      if (!anterior) return anterior
+
+      return {
+        ...anterior,
+        mensagens: [...anterior.mensagens, mensagem],
+      }
+    })
+  }}
+/>
 
           {erro && (
             <p role="alert" className="mb-2 text-sm text-red-600">

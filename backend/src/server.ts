@@ -11,6 +11,9 @@ import {
   obterOuCriarConversa,
 } from './services/conversas'
 import { responderConversa } from './services/respostas'
+import { confirmarRascunho } from './services/confirmacao'
+import { cancelarRascunho, editarRascunho, edicaoRascunhoSchema, } from './services/rascunhos'
+
 
 const app = express()
 const prisma = new PrismaClient()
@@ -328,6 +331,228 @@ app.post('/conversas/:id/responder', autenticar, async (request, response) => {
     })
   }
 })
+
+app.get('/conversas/:id/rascunho', autenticar, async (request, response) => {
+  const { id: usuarioId } = response.locals.usuario as UsuarioAutenticado
+  const conversaId = request.params.id
+
+  if (typeof conversaId !== 'string' || !conversaId.trim()) {
+    return response.status(400).json({
+      mensagem: 'Identificador da conversa inválido.',
+    })
+  }
+
+  try {
+    const conversa = await prisma.conversa.findFirst({
+      where: {
+        id: conversaId,
+        usuarioId,
+      },
+      select: {
+        rascunho: {
+          select: {
+            id: true,
+            titulo: true,
+            descricao: true,
+            tipo: true,
+            categoria: true,
+            prioridade: true,
+            afetados: true,
+            atualizadoEm: true,
+          },
+        },
+      },
+    })
+
+    if (!conversa) {
+      return response.status(404).json({
+        mensagem: 'Conversa não encontrada.',
+      })
+    }
+
+    return response.json({
+      rascunho: conversa.rascunho,
+    })
+  } catch (erro) {
+    console.error('Erro ao consultar rascunho:', erro)
+
+    return response.status(500).json({
+      mensagem: 'Não foi possível carregar o rascunho.',
+    })
+  }
+})
+
+app.post(
+  '/conversas/:id/rascunho/:rascunhoId/confirmar',
+  autenticar,
+  async (request, response) => {
+    const { id: usuarioId } = response.locals.usuario as UsuarioAutenticado
+    const conversaId = request.params.id
+    const rascunhoId = request.params.rascunhoId
+
+    if (
+      typeof conversaId !== 'string' ||
+      !conversaId.trim() ||
+      typeof rascunhoId !== 'string' ||
+      !rascunhoId.trim()
+    ) {
+      return response.status(400).json({
+        mensagem: 'Identificadores inválidos.',
+      })
+    }
+
+    try {
+      const resultado = await confirmarRascunho(
+        prisma,
+        usuarioId,
+        conversaId,
+        rascunhoId,
+      )
+
+      switch (resultado.status) {
+        case 'CRIADO':
+          return response.status(201).json(resultado)
+
+        case 'JA_CONFIRMADO':
+          return response.json(resultado)
+
+        case 'REVISAO_NECESSARIA':
+          return response.status(409).json({
+            ...resultado,
+            mensagem:
+              'Existem chamados que precisam ser revisados antes de criar outro.',
+          })
+
+        case 'CONVERSA_INDISPONIVEL':
+          return response.status(409).json({
+            mensagem: 'A conversa não está disponível para confirmação.',
+          })
+
+        default:
+          return response.status(404).json({
+            mensagem: 'Conversa ou rascunho não encontrado.',
+          })
+      }
+    } catch (erro) {
+      console.error('Erro ao confirmar rascunho:', erro)
+
+      return response.status(500).json({
+        mensagem:
+          'Não foi possível confirmar o chamado. Consulte o estado antes de tentar novamente.',
+      })
+    }
+  },
+)
+
+app.delete(
+  '/conversas/:id/rascunho/:rascunhoId',
+  autenticar,
+  async (request, response) => {
+    const { id: usuarioId } = response.locals.usuario as UsuarioAutenticado
+    const conversaId = request.params.id
+    const rascunhoId = request.params.rascunhoId
+
+    if (
+      typeof conversaId !== 'string' ||
+      !conversaId.trim() ||
+      typeof rascunhoId !== 'string' ||
+      !rascunhoId.trim()
+    ) {
+      return response.status(400).json({
+        mensagem: 'Identificadores inválidos.',
+      })
+    }
+
+    try {
+      const resultado = await cancelarRascunho(
+        prisma,
+        usuarioId,
+        conversaId,
+        rascunhoId,
+      )
+
+      if (resultado.status === 'CANCELADO') {
+        return response.json(resultado)
+      }
+
+      if (resultado.status === 'CONVERSA_INDISPONIVEL') {
+        return response.status(409).json({
+          mensagem: 'A conversa não está disponível para cancelar o rascunho.',
+        })
+      }
+
+      return response.status(404).json({
+        mensagem: 'Conversa ou rascunho não encontrado.',
+      })
+    } catch (erro) {
+      console.error('Erro ao cancelar rascunho:', erro)
+
+      return response.status(500).json({
+        mensagem: 'Não foi possível cancelar o rascunho.',
+      })
+    }
+  },
+)
+
+app.patch(
+  '/conversas/:id/rascunho/:rascunhoId',
+  autenticar,
+  async (request, response) => {
+    const { id: usuarioId } = response.locals.usuario as UsuarioAutenticado
+    const conversaId = request.params.id
+    const rascunhoId = request.params.rascunhoId
+
+    if (
+      typeof conversaId !== 'string' ||
+      !conversaId.trim() ||
+      typeof rascunhoId !== 'string' ||
+      !rascunhoId.trim()
+    ) {
+      return response.status(400).json({
+        mensagem: 'Identificadores inválidos.',
+      })
+    }
+
+    const validacao = edicaoRascunhoSchema.safeParse(request.body)
+
+    if (!validacao.success) {
+      return response.status(400).json({
+        mensagem:
+          'Informe um título de 5 a 150 caracteres e uma descrição de 10 a 2.000 caracteres.',
+      })
+    }
+
+    try {
+      const resultado = await editarRascunho(
+        prisma,
+        usuarioId,
+        conversaId,
+        rascunhoId,
+        validacao.data,
+      )
+
+      if (resultado.status === 'EDITADO') {
+        return response.json(resultado)
+      }
+
+      if (resultado.status === 'CONVERSA_INDISPONIVEL') {
+        return response.status(409).json({
+          mensagem: 'A conversa não está disponível para editar o rascunho.',
+        })
+      }
+
+      return response.status(404).json({
+        mensagem: 'Conversa ou rascunho não encontrado.',
+      })
+    } catch (erro) {
+      console.error('Erro ao editar rascunho:', erro)
+
+      return response.status(500).json({
+        mensagem: 'Não foi possível editar o rascunho.',
+      })
+    }
+  },
+)
 
 app.listen(PORT, () => {
   console.log(`Servidor rodando em http://localhost:${PORT}`)

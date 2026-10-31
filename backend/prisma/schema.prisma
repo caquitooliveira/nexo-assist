@@ -34,6 +34,8 @@ model Chamado {
   usuarioId         String
   usuario           Usuario  @relation(fields: [usuarioId], references: [id])
 
+  origemRascunhoId String? @unique
+
   @@index([usuarioId])
 }
 
@@ -47,6 +49,8 @@ model Conversa {
   usuarioId    String
   usuario      Usuario  @relation(fields: [usuarioId], references: [id])
   mensagens    Mensagem[]
+
+  rascunho RascunhoChamado?
 
   @@index([usuarioId])
 }
@@ -85,4 +89,19 @@ model AcaoAgente {
   mensagem   Mensagem @relation(fields: [mensagemId], references: [id])
 
   @@index([mensagemId])
+}
+
+model RascunhoChamado {
+  id           String   @id @default(cuid())
+  titulo       String
+  descricao    String
+  tipo         String
+  categoria    String
+  prioridade   String
+  afetados     String
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  conversaId   String   @unique
+  conversa     Conversa @relation(fields: [conversaId], references: [id])
 }
