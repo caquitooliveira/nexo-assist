@@ -6,7 +6,7 @@ import {
   useState,
   type FormEvent,
 } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
 type Usuario = {
   id: string
@@ -158,6 +158,7 @@ function ConsoleAnalista() {
   const [selecionadaId, setSelecionadaId] = useState<string | null>(null)
   const [detalhe, setDetalhe] = useState<DetalheConversa | null>(null)
   const [busca, setBusca] = useState('')
+  const [painelAberto, setPainelAberto] = useState(true)
   const [filtro, setFiltro] = useState('TODAS')
   const [texto, setTexto] = useState('')
   const [ocupado, setOcupado] = useState(false)
@@ -396,7 +397,7 @@ function ConsoleAnalista() {
 
   const conversasFiltradas = conversas.filter((conversa) => {
     const correspondeBusca =
-      `${conversa.usuario.nome} ${conversa.usuario.email}`
+      `${conversa.usuario.nome} ${conversa.usuario.email} ${conversa.mensagens[0]?.texto ?? ''}`
         .toLowerCase()
         .includes(busca.toLowerCase())
 
@@ -410,26 +411,14 @@ function ConsoleAnalista() {
   })
 
   return (
-    <div className="flex h-screen flex-col bg-white text-slate-800">
-      <header className="flex shrink-0 items-center justify-between border-b border-slate-200 px-5 py-4">
-        <div>
-          <p className="font-semibold">
-            <span className="mr-2 text-blue-600">N</span>
-            Console do analista
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            {usuario.nome}
-          </p>
-        </div>
-
-        <button
-          type="button"
-          onClick={sair}
-          className="text-sm text-slate-500 hover:text-blue-600"
-        >
-          Sair
-        </button>
-      </header>
+    <div className="flex h-screen flex-col bg-white pl-14 text-slate-800">
+      <nav aria-label="Navegação do analista" className="fixed inset-y-0 left-0 flex w-14 flex-col items-center gap-5 border-r border-slate-200 bg-white py-5">
+        <Link to="/analista" aria-label="Nexo Assist — conversas" className="text-2xl font-black text-blue-600">N</Link>
+        <Link to="/analista" aria-label="Conversas" aria-current="page" className="rounded-xl bg-blue-50 p-2 text-blue-600"><svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M4 4h16v12H9l-5 4V4Z"/></svg></Link>
+        <button type="button" aria-label={painelAberto ? 'Recolher chamados' : 'Mostrar chamados'} aria-expanded={painelAberto} onClick={() => setPainelAberto((aberto) => !aberto)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-50 hover:text-blue-600"><svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></button>
+        <Link to="/perfil" title={`Meu perfil — ${usuario.nome}`} aria-label="Meu perfil" className="mt-auto flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-[10px] font-semibold text-blue-700">{usuario.nome.split(' ').filter(Boolean).slice(0, 2).map((nome) => nome[0]).join('')}</Link>
+        <button type="button" onClick={sair} className="text-[10px] text-slate-500 hover:text-blue-600">Sair</button>
+      </nav>
 
       {erro && (
         <p
@@ -440,31 +429,25 @@ function ConsoleAnalista() {
         </p>
       )}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[17rem_minmax(0,1fr)_19rem] lg:overflow-hidden">
+      <div className={`grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:overflow-hidden ${painelAberto ? 'lg:grid-cols-[17rem_minmax(0,1fr)_19rem]' : 'lg:grid-cols-[17rem_minmax(0,1fr)]'}`}>
         <aside className="overflow-y-auto border-r border-slate-200 p-4">
-          <h1 className="mb-3 font-semibold">Conversas</h1>
+          <div className="mb-4 flex items-center justify-between gap-2"><h1 className="text-base font-semibold">Conversas</h1><span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] text-emerald-700">● Analista</span></div>
 
           <input
-            aria-label="Pesquisar funcionário"
+            aria-label="Pesquisar conversa"
             value={busca}
             onChange={(event) => setBusca(event.target.value)}
-            placeholder="Pesquisar funcionário..."
+            placeholder="Pesquisar conversa..."
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
           />
 
-          <select
-            aria-label="Filtrar conversas"
-            value={filtro}
-            onChange={(event) => setFiltro(event.target.value)}
-            className="mt-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-          >
-            <option value="TODAS">Todas</option>
-            <option value="AGUARDANDO_ANALISTA">Aguardando analista</option>
-            <option value="COM_ANALISTA">Em atendimento</option>
-            <option value="MINHAS">Minhas</option>
-            <option value="COM_AGENTE">Com o assistente</option>
-            <option value="ENCERRADA">Encerradas</option>
-          </select>
+          <div role="group" aria-label="Filtrar conversas" className="mt-3 flex flex-wrap gap-1">
+            {[
+              ['TODAS', 'Todas'], ['AGUARDANDO_ANALISTA', 'Para você'],
+              ['COM_AGENTE', 'Com o agente'], ['MINHAS', 'Minhas'],
+              ['COM_ANALISTA', 'Em atendimento'], ['ENCERRADA', 'Encerradas'],
+            ].map(([valor, rotulo]) => <button key={valor} type="button" aria-pressed={filtro === valor} onClick={() => setFiltro(valor)} className={`rounded-full px-2 py-1 text-[10px] ${filtro === valor ? 'bg-blue-50 font-semibold text-blue-600' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}>{rotulo}{valor === 'AGUARDANDO_ANALISTA' ? ` ${conversas.filter((item) => item.status === valor).length}` : ''}</button>)}
+          </div>
 
           <div className="mt-4 space-y-2">
             {conversasFiltradas.map((conversa) => (
@@ -483,17 +466,14 @@ function ConsoleAnalista() {
                     : 'border-transparent hover:bg-slate-50'
                 }`}
               >
-                <p className="text-sm font-semibold">
-                  {conversa.usuario.nome}
-                </p>
-
-                <p className="mt-1 truncate text-xs text-slate-500">
-                  {conversa.mensagens[0]?.texto || 'Sem mensagens'}
-                </p>
-
-                <p className="mt-2 text-xs text-blue-600">
-                  {STATUS[conversa.status] ?? conversa.status}
-                </p>
+                <div className="flex gap-2">
+                  <span aria-hidden="true" className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700">{conversa.usuario.nome.split(' ').filter(Boolean).slice(0, 2).map((nome) => nome[0]).join('')}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2"><p className="truncate text-xs font-semibold">{conversa.usuario.nome}</p><time dateTime={conversa.atualizadoEm} className="shrink-0 text-[10px] text-slate-400">{new Date(conversa.atualizadoEm).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })}</time></div>
+                    <p className="mt-1 truncate text-[11px] text-slate-400">{conversa.mensagens[0]?.texto || 'Sem mensagens'}</p>
+                    <p className={`mt-1.5 text-[10px] ${conversa.status === 'AGUARDANDO_ANALISTA' ? 'text-amber-600' : conversa.status === 'COM_ANALISTA' ? 'text-emerald-600' : 'text-slate-400'}`}>● {STATUS[conversa.status] ?? conversa.status}</p>
+                  </div>
+                </div>
               </button>
             ))}
 
@@ -514,16 +494,14 @@ function ConsoleAnalista() {
             </div>
           ) : (
             <>
-              <div className="shrink-0 border-b border-slate-200 p-4">
-                <p className="font-semibold">{ativa.usuario.nome}</p>
-                <p className="mt-1 text-xs text-slate-500">
-                  {ativa.usuario.email}
-                </p>
+              <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
+                <div><p className="text-sm font-semibold">{ativa.usuario.nome}</p><p className="mt-1 text-[11px] text-slate-400">{ativa.usuario.email}</p></div>
 
-                <div className="mt-3 flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded-full bg-slate-100 px-3 py-1 text-xs">
                     {STATUS[ativa.status] ?? ativa.status}
                   </span>
+                  {!painelAberto && <button type="button" onClick={() => setPainelAberto(true)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs text-blue-600">Ver chamados</button>}
 
                   {ativa.status === 'AGUARDANDO_ANALISTA' && (
                     <button
@@ -566,16 +544,13 @@ function ConsoleAnalista() {
                 </div>
               </div>
 
-              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-slate-50 p-5">
+              <div className="min-h-0 flex-1 space-y-5 overflow-y-auto bg-slate-100/80 px-5 py-6">
                 {ativa.mensagens.map((mensagem) => {
                   if (mensagem.autor === 'SISTEMA') {
                     return (
-                      <p
-                        key={mensagem.id}
-                        className="text-center text-xs text-slate-500"
-                      >
+                      <div key={mensagem.id} className="py-1 text-center text-[11px] text-slate-400">
                         <TextoMensagem texto={mensagem.texto} />
-                      </p>
+                      </div>
                     )
                   }
 
@@ -607,6 +582,7 @@ function ConsoleAnalista() {
                         }`}
                       >
                         <TextoMensagem texto={mensagem.texto} />
+                        <time dateTime={mensagem.criadoEm} className="mt-1 block text-right text-[10px] text-slate-400">{new Date(mensagem.criadoEm).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })}</time>
                       </div>
                     </div>
                   )
@@ -615,6 +591,7 @@ function ConsoleAnalista() {
                 <div ref={fimHistorico} />
               </div>
 
+              {ativa.status !== 'COM_AGENTE' && <div role="status" className="border-t border-slate-200 bg-white px-5 py-2.5 text-xs text-slate-500">{ativa.status === 'AGUARDANDO_ANALISTA' ? 'À espera de um analista · Assistente pausado' : ativa.status === 'COM_ANALISTA' ? `Atendimento com ${ativa.analista?.nome ?? 'analista'} · Assistente pausado` : 'Conversa encerrada'}</div>}
               <form
                 onSubmit={enviarMensagem}
                 className="flex shrink-0 gap-2 border-t border-slate-200 p-4"
@@ -645,8 +622,8 @@ function ConsoleAnalista() {
           )}
         </main>
 
-        <aside className="overflow-y-auto border-l border-slate-200 p-4">
-          <h2 className="font-semibold">Contexto e chamados</h2>
+        {painelAberto && <aside className="overflow-y-auto border-l border-slate-200 bg-white p-4">
+          <div className="flex items-start justify-between gap-3"><div><h2 className="text-sm font-semibold">{ativa ? `Chamados de ${ativa.usuario.nome.split(' ')[0]}` : 'Contexto e chamados'}</h2>{ativa && <p className="mt-1 text-[11px] text-slate-400">{ativa.chamados.filter((chamado) => chamado.status !== 'RESOLVIDO').length} abertos · {ativa.chamados.filter((chamado) => chamado.status === 'RESOLVIDO').length} resolvidos</p>}</div><button type="button" aria-label="Fechar painel de chamados" onClick={() => setPainelAberto(false)} className="px-1 text-lg leading-4 text-slate-400 hover:text-slate-700">×</button></div>
 
           {ativa && (
             <>
@@ -711,7 +688,7 @@ function ConsoleAnalista() {
               </div>
             </>
           )}
-        </aside>
+        </aside>}
       </div>
     </div>
   )

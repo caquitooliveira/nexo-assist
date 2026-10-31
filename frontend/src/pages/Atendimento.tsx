@@ -5,6 +5,7 @@ import CartaoRascunho from '../components/CartaoRascunho'
 import PainelChamados from '../components/PainelChamados'
 import AtendimentoHumano from '../components/AtendimentoHumano'
 import { useSincronizarConversa } from '../hooks/useSincronizarConversa'
+import BarraFuncionario from '../components/BarraFuncionario'
 
 type Usuario = {
   id: string
@@ -326,35 +327,7 @@ function Atendimento() {
 
   return (
     <div className="flex min-h-screen bg-white text-slate-800">
-      <aside className="hidden w-56 shrink-0 sm:flex flex-col border-r border-slate-200 p-4">
-        <div className="mb-10 flex items-center gap-2 text-sm font-bold">
-          <span className="text-2xl font-black text-blue-600">
-            N
-          </span>
-          <span>Nexo Assist</span>
-        </div>
-
-        <div className="rounded-lg bg-blue-50 px-3 py-2 text-sm font-medium text-blue-600">
-          Atendimento
-        </div>
-
-        <div className="mt-auto border-t border-slate-200 pt-4">
-          <p className="text-sm font-medium">{usuario.nome}</p>
-
-          <p className="mt-1 break-all text-xs text-slate-500">
-            {usuario.email}
-          </p>
-
-          <button
-            type="button"
-            onClick={sair}
-            className="mt-4 text-sm text-slate-500 hover:text-blue-600"
-          >
-            Sair
-          </button>
-        </div>
-      </aside>
-
+      <BarraFuncionario usuario={usuario} onSair={sair} />
       <main className="flex min-w-0 flex-1 flex-col">
         <header className="flex min-h-16 flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-6 py-3">
           <p className="text-xs text-slate-500">
