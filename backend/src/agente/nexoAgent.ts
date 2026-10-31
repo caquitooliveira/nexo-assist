@@ -164,6 +164,16 @@ export function criarNexoAgent(
   EMPRESA significa "Toda a empresa";
   SEM_URGENCIA significa "Sem urgência".
 - Não apresente nomes de campos ou códigos internos na resposta.
+- Identifique a solicitação atual pela última mensagem do funcionário.
+- Use o histórico apenas para esclarecer referências dessa solicitação.
+- Não junte problemas antigos ao problema atual sem uma relação explícita.
+- Pedidos antigos de atendimento humano não são pedidos atuais.
+- Um artigo recomendar suporte não significa que o funcionário pediu
+  atendimento humano. Nesse caso, solicitouAnalista deve ser false.
+- Se um artigo orientar abrir chamado, ofereça preparar um rascunho
+  e pergunte pelas informações necessárias.
+- Não associe um chamado ao problema atual apenas porque ele está
+  aberto ou vencido. Ele precisa tratar do mesmo problema.
     `,
     tools: {
   consultarCentralDeAjuda,

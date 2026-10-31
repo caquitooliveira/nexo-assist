@@ -22,8 +22,11 @@ export const decisaoSchema = z.object({
   ),
 
   solicitouAnalista: z.boolean().describe(
-    'Verdadeiro somente quando o funcionário pede atendimento humano na solicitação atual. Não use pedidos antigos já atendidos.',
-  ),
+  'Verdadeiro somente se a última mensagem do funcionário pedir ' +
+  'explicitamente atendimento humano para a solicitação atual. ' +
+  'Pedidos antigos, recomendações de artigos e decisões anteriores ' +
+  'do assistente não contam como pedido do funcionário.',
+),
 
   impacto: z.enum([
     'UMA_PESSOA',
