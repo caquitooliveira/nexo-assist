@@ -1,11 +1,14 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import CartaoRascunho from '../components/CartaoRascunho'
+import AtendimentoHumano from '../components/AtendimentoHumano'
+import { useSincronizarConversa } from '../hooks/useSincronizarConversa'
 
 type Usuario = {
   id: string
   nome: string
   email: string
+  papel?: string
 }
 
 type AcaoAgente = {
@@ -28,10 +31,18 @@ type Mensagem = {
 type Conversa = {
   id: string
   status: string
+  atualizadoEm: string
   mensagens: Mensagem[]
 }
 
 const API_URL = 'http://localhost:3000'
+
+const STATUS_CONVERSA: Record<string, string> = {
+  COM_AGENTE: 'Com o assistente',
+  AGUARDANDO_ANALISTA: 'Aguardando analista',
+  COM_ANALISTA: 'Em atendimento',
+  ENCERRADA: 'Encerrada',
+}
 
 function obterToken() {
   return (
@@ -47,6 +58,23 @@ function limparSessao() {
   sessionStorage.removeItem('nexo-usuario')
 }
 
+function adicionarMensagens(
+  existentes: Mensagem[],
+  novas: Mensagem[],
+) {
+  const mensagens = [...existentes]
+  const ids = new Set(existentes.map((mensagem) => mensagem.id))
+
+  for (const mensagem of novas) {
+    if (!ids.has(mensagem.id)) {
+      mensagens.push(mensagem)
+      ids.add(mensagem.id)
+    }
+  }
+
+  return mensagens
+}
+
 function Atendimento() {
   const navigate = useNavigate()
 
@@ -56,6 +84,12 @@ function Atendimento() {
   const [carregando, setCarregando] = useState(true)
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
+
+  const erroSincronizacao = useSincronizarConversa({
+    conversa,
+    setConversa,
+    enviando,
+  })
 
   useEffect(() => {
     const controller = new AbortController()
@@ -88,13 +122,22 @@ function Atendimento() {
           throw new Error('Não foi possível verificar sua sessão.')
         }
 
-        const usuarioCarregado: Usuario = await respostaUsuario.json()
+        const usuarioCarregado: Usuario =
+          await respostaUsuario.json()
 
-        const respostaConversa = await fetch(`${API_URL}/conversas/atual`, {
-          method: 'POST',
-          headers,
-          signal: controller.signal,
-        })
+        if (usuarioCarregado.papel === 'ANALISTA') {
+          navigate('/analista', { replace: true })
+          return
+        }
+
+        const respostaConversa = await fetch(
+          `${API_URL}/conversas/atual`,
+          {
+            method: 'POST',
+            headers,
+            signal: controller.signal,
+          },
+        )
 
         if (respostaConversa.status === 401) {
           limparSessao()
@@ -106,15 +149,22 @@ function Atendimento() {
           throw new Error('Não foi possível carregar a conversa.')
         }
 
-        const conversaCarregada: Conversa = await respostaConversa.json()
+        const conversaCarregada: Conversa =
+          await respostaConversa.json()
 
         setUsuario(usuarioCarregado)
         setConversa(conversaCarregada)
       } catch (erroCapturado) {
         if (controller.signal.aborted) return
 
-        console.error('Erro ao carregar atendimento:', erroCapturado)
-        setErro('Não foi possível carregar o atendimento. Verifique o servidor.')
+        console.error(
+          'Erro ao carregar atendimento:',
+          erroCapturado,
+        )
+
+        setErro(
+          'Não foi possível carregar o atendimento. Verifique o servidor.',
+        )
       } finally {
         if (!controller.signal.aborted) {
           setCarregando(false)
@@ -138,14 +188,24 @@ function Atendimento() {
     const textoLimpo = texto.trim()
     const token = obterToken()
 
-    if (!textoLimpo || !token || !conversa || enviando) return
+    if (
+      !textoLimpo ||
+      !token ||
+      !conversa ||
+      enviando ||
+      conversa.status === 'ENCERRADA'
+    ) {
+      return
+    }
+
+    const conversaId = conversa.id
 
     setErro('')
     setEnviando(true)
 
     try {
       const resposta = await fetch(
-        `${API_URL}/conversas/${conversa.id}/mensagens`,
+        `${API_URL}/conversas/${conversaId}/mensagens`,
         {
           method: 'POST',
           headers: {
@@ -163,7 +223,8 @@ function Atendimento() {
       }
 
       if (!resposta.ok) {
-        const dados: { mensagem?: string } = await resposta.json()
+        const dados: { mensagem?: string } =
+          await resposta.json()
 
         throw new Error(
           dados.mensagem || 'Não foi possível enviar a mensagem.',
@@ -177,7 +238,9 @@ function Atendimento() {
       } = await resposta.json()
 
       setConversa((anterior) => {
-        if (!anterior) return anterior
+        if (!anterior || anterior.id !== conversaId) {
+          return anterior
+        }
 
         const novasMensagens = [dados.mensagem]
 
@@ -187,7 +250,10 @@ function Atendimento() {
 
         return {
           ...anterior,
-          mensagens: [...anterior.mensagens, ...novasMensagens],
+          mensagens: adicionarMensagens(
+            anterior.mensagens,
+            novasMensagens,
+          ),
         }
       })
 
@@ -238,12 +304,16 @@ function Atendimento() {
   ).length
 
   const limiteAtingido = totalMensagens >= 30
+  const encerrada = conversa.status === 'ENCERRADA'
+  const comAgente = conversa.status === 'COM_AGENTE'
 
   return (
     <div className="flex min-h-screen bg-white text-slate-800">
       <aside className="flex w-56 shrink-0 flex-col border-r border-slate-200 p-4">
         <div className="mb-10 flex items-center gap-2 text-sm font-bold">
-          <span className="text-2xl font-black text-blue-600">N</span>
+          <span className="text-2xl font-black text-blue-600">
+            N
+          </span>
           <span>Nexo Assist</span>
         </div>
 
@@ -269,7 +339,7 @@ function Atendimento() {
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 items-center justify-between border-b border-slate-200 px-6">
+        <header className="flex min-h-16 flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-6 py-3">
           <p className="text-xs text-slate-500">
             Service desk de TI <span className="mx-2">›</span>
             <span className="font-medium text-slate-800">
@@ -278,7 +348,7 @@ function Atendimento() {
           </p>
 
           <span className="rounded-full bg-blue-50 px-3 py-1 text-xs text-blue-700">
-            Atendimento
+            {STATUS_CONVERSA[conversa.status] ?? conversa.status}
           </span>
         </header>
 
@@ -299,6 +369,17 @@ function Atendimento() {
 
               const acoes = mensagem.acoes ?? []
 
+              if (mensagem.autor === 'SISTEMA') {
+                return (
+                  <p
+                    key={mensagem.id}
+                    className="text-center text-xs leading-5 text-slate-500"
+                  >
+                    {mensagem.texto}
+                  </p>
+                )
+              }
+
               return (
                 <div
                   key={mensagem.id}
@@ -317,55 +398,58 @@ function Atendimento() {
                   )}
 
                   {mensagem.autor === 'ASSISTENTE' &&
-  mensagem.entendimento &&
-  mensagem.justificativa &&
-  mensagem.seguranca && (
-    <details className="mb-2 rounded-lg border border-blue-100 bg-blue-50/50 px-3 py-2">
-      <summary className="cursor-pointer text-xs font-medium text-blue-700">
-        Ver detalhes da decisão
-      </summary>
+                    mensagem.entendimento &&
+                    mensagem.justificativa &&
+                    mensagem.seguranca && (
+                      <details className="mb-2 rounded-lg border border-blue-100 bg-blue-50/50 px-3 py-2">
+                        <summary className="cursor-pointer text-xs font-medium text-blue-700">
+                          Ver detalhes da decisão
+                        </summary>
 
-      <div className="mt-3 space-y-3 text-xs leading-5 text-slate-600">
-        <div>
-          <p className="font-semibold text-slate-700">
-            O que entendeu
-          </p>
-          <p>{mensagem.entendimento}</p>
-        </div>
+                        <div className="mt-3 space-y-3 text-xs leading-5 text-slate-600">
+                          <div>
+                            <p className="font-semibold text-slate-700">
+                              O que entendeu
+                            </p>
+                            <p>{mensagem.entendimento}</p>
+                          </div>
 
-        <div>
-          <p className="font-semibold text-slate-700">
-            Justificativa
-          </p>
-          <p>{mensagem.justificativa}</p>
-        </div>
+                          <div>
+                            <p className="font-semibold text-slate-700">
+                              Justificativa
+                            </p>
+                            <p>{mensagem.justificativa}</p>
+                          </div>
 
-        <div>
-          <p className="font-semibold text-slate-700">
-            Segurança declarada pelo agente
-          </p>
+                          <div>
+                            <p className="font-semibold text-slate-700">
+                              Segurança declarada pelo agente
+                            </p>
 
-          <p>
-            {mensagem.seguranca === 'ALTA'
-              ? 'Alta'
-              : mensagem.seguranca === 'MEDIA'
-                ? 'Média'
-                : 'Baixa'}
-          </p>
+                            <p>
+                              {mensagem.seguranca === 'ALTA'
+                                ? 'Alta'
+                                : mensagem.seguranca === 'MEDIA'
+                                  ? 'Média'
+                                  : 'Baixa'}
+                            </p>
 
-          <p className="mt-1 text-slate-500">
-            Autoavaliação do modelo, não uma garantia de acerto.
-          </p>
-        </div>
-      </div>
-    </details>
-  )}
+                            <p className="mt-1 text-slate-500">
+                              Autoavaliação do modelo, não uma garantia
+                              de acerto.
+                            </p>
+                          </div>
+                        </div>
+                      </details>
+                    )}
 
                   {mensagem.autor === 'ASSISTENTE' &&
                     acoes.length > 0 && (
                       <details className="mb-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                         <summary className="cursor-pointer text-xs text-slate-600">
-                          {acoes.map((acao) => acao.nome).join(' · ')}
+                          {acoes
+                            .map((acao) => acao.nome)
+                            .join(' · ')}
                         </summary>
 
                         <div className="mt-3 space-y-3">
@@ -380,7 +464,7 @@ function Atendimento() {
 
                               <p className="mt-1 text-slate-600">
                                 <span className="font-medium">
-                                  Consulta:{' '}
+                                  Entrada:{' '}
                                 </span>
                                 {acao.entrada}
                               </p>
@@ -401,7 +485,9 @@ function Atendimento() {
                     className={
                       enviadaPeloFuncionario
                         ? 'whitespace-pre-wrap break-words rounded-xl bg-slate-800 px-4 py-3 text-sm text-white'
-                        : 'whitespace-pre-wrap break-words rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm'
+                        : mensagem.autor === 'ANALISTA'
+                          ? 'whitespace-pre-wrap break-words rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-slate-800'
+                          : 'whitespace-pre-wrap break-words rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm'
                     }
                   >
                     {mensagem.texto}
@@ -412,38 +498,102 @@ function Atendimento() {
           </div>
 
           {enviando && (
-            <p role="status" className="mb-3 text-sm text-slate-500">
-              Nexo está processando sua mensagem...
+            <p
+              role="status"
+              className="mb-3 text-sm text-slate-500"
+            >
+              {comAgente
+                ? 'Nexo está processando sua mensagem...'
+                : 'Enviando mensagem...'}
             </p>
           )}
 
-          <CartaoRascunho
-  key={conversa.id}
-  conversaId={conversa.id}
-  token={obterToken()}
-  atualizacao={conversa.mensagens.length}
-  onMensagemSalva={(mensagem) => {
-    setConversa((anterior) => {
-      if (!anterior) return anterior
+          {comAgente && (
+            <CartaoRascunho
+              key={conversa.id}
+              conversaId={conversa.id}
+              token={obterToken()}
+              atualizacao={conversa.mensagens.length}
+              onMensagemSalva={(mensagem) => {
+                setConversa((anterior) => {
+                  if (!anterior) return anterior
 
-      return {
-        ...anterior,
-        mensagens: [...anterior.mensagens, mensagem],
-      }
-    })
-  }}
-/>
+                  return {
+                    ...anterior,
+                    mensagens: adicionarMensagens(
+                      anterior.mensagens,
+                      [mensagem],
+                    ),
+                  }
+                })
+              }}
+            />
+          )}
 
           {erro && (
-            <p role="alert" className="mb-2 text-sm text-red-600">
+            <p
+              role="alert"
+              className="mb-2 text-sm text-red-600"
+            >
               {erro}
             </p>
           )}
 
-          {limiteAtingido && (
+          {erroSincronizacao && (
+            <p
+              role="status"
+              className="mb-2 text-xs text-amber-700"
+            >
+              {erroSincronizacao}
+            </p>
+          )}
+
+          {limiteAtingido && !encerrada && (
             <p className="mb-2 text-sm text-amber-700">
               Você atingiu o limite de mensagens desta conversa.
             </p>
+          )}
+
+          {encerrada ? (
+            <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <p
+                role="status"
+                className="text-sm font-medium text-slate-700"
+              >
+                Este atendimento foi encerrado.
+              </p>
+
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="mt-3 rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700"
+              >
+                Iniciar novo atendimento
+              </button>
+            </div>
+          ) : (
+            <AtendimentoHumano
+              conversaId={conversa.id}
+              status={conversa.status}
+              token={obterToken()}
+              enviandoMensagem={enviando}
+              onTransferir={(status, mensagem) => {
+                setConversa((anterior) => {
+                  if (!anterior) return anterior
+
+                  return {
+                    ...anterior,
+                    status,
+                    mensagens: mensagem
+                      ? adicionarMensagens(
+                          anterior.mensagens,
+                          [mensagem],
+                        )
+                      : anterior.mensagens,
+                  }
+                })
+              }}
+            />
           )}
 
           <form
@@ -458,15 +608,26 @@ function Atendimento() {
               id="mensagem"
               value={texto}
               onChange={(event) => setTexto(event.target.value)}
-              placeholder="Escreva para o Nexo..."
+              placeholder={
+                encerrada
+                  ? 'Atendimento encerrado'
+                  : comAgente
+                    ? 'Escreva para o Nexo...'
+                    : 'Escreva para o analista...'
+              }
               maxLength={2000}
-              disabled={enviando || limiteAtingido}
+              disabled={enviando || limiteAtingido || encerrada}
               className="min-w-0 flex-1 px-3 py-2 text-sm outline-none disabled:opacity-60"
             />
 
             <button
               type="submit"
-              disabled={enviando || limiteAtingido || !texto.trim()}
+              disabled={
+                enviando ||
+                limiteAtingido ||
+                !texto.trim() ||
+                encerrada
+              }
               className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {enviando ? 'Aguarde...' : 'Enviar'}

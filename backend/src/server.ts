@@ -3,18 +3,35 @@ import { PrismaClient } from '@prisma/client'
 import cors from 'cors'
 import express from 'express'
 import jwt from 'jsonwebtoken'
-import { autenticar, type UsuarioAutenticado } from './auth'
+
+import {
+  autenticar,
+  exigirAnalista,
+  type UsuarioAutenticado,
+} from './auth'
+
+import { criarRotasAnalista } from './routes/analista'
 import { buscarArtigos } from './services/artigos'
 import { listarChamadosDoUsuario } from './services/chamados'
+
 import {
   adicionarMensagem,
   obterOuCriarConversa,
 } from './services/conversas'
+
+import {
+  confirmarRascunho,
+  confirmacaoSchema,
+} from './services/confirmacao'
+
+import {
+  cancelarRascunho,
+  editarRascunho,
+  edicaoRascunhoSchema,
+} from './services/rascunhos'
+
 import { responderConversa } from './services/respostas'
-import { confirmarRascunho, confirmacaoSchema, } from './services/confirmacao'
-import { cancelarRascunho, editarRascunho, edicaoRascunhoSchema, } from './services/rascunhos'
-
-
+import { transferirParaAnalista } from './services/transferencias'
 
 const app = express()
 const prisma = new PrismaClient()
@@ -29,6 +46,13 @@ if (!jwtSecret) {
 
 app.use(cors())
 app.use(express.json())
+
+app.use(
+  '/analista',
+  autenticar,
+  exigirAnalista(prisma),
+  criarRotasAnalista(prisma),
+)
 
 app.get('/health', (_request, response) => {
   response.json({
@@ -56,7 +80,9 @@ app.post('/auth/login', async (request, response) => {
 
   try {
     const usuario = await prisma.usuario.findUnique({
-      where: { email: email.trim().toLowerCase() },
+      where: {
+        email: email.trim().toLowerCase(),
+      },
     })
 
     if (!usuario) {
@@ -80,6 +106,7 @@ app.post('/auth/login', async (request, response) => {
         id: usuario.id,
         nome: usuario.nome,
         email: usuario.email,
+        papel: usuario.papel,
       },
     })
   } catch (erro) {
@@ -101,6 +128,7 @@ app.get('/auth/me', autenticar, async (_request, response) => {
         id: true,
         nome: true,
         email: true,
+        papel: true,
       },
     })
 
@@ -180,214 +208,245 @@ app.post('/conversas/atual', autenticar, async (_request, response) => {
   }
 })
 
-app.post('/conversas/:id/mensagens', autenticar, async (request, response) => {
-  const { id: usuarioId } = response.locals.usuario as UsuarioAutenticado
-  const conversaId = request.params.id
+app.post(
+  '/conversas/:id/mensagens',
+  autenticar,
+  async (request, response) => {
+    const { id: usuarioId } =
+      response.locals.usuario as UsuarioAutenticado
 
-  const { texto } = (request.body ?? {}) as {
-    texto?: unknown
-  }
+    const conversaId = request.params.id
 
-  if (typeof conversaId !== 'string' || !conversaId.trim()) {
-    return response.status(400).json({
-      mensagem: 'Identificador da conversa inválido.',
-    })
-  }
+    const { texto } = (request.body ?? {}) as {
+      texto?: unknown
+    }
 
-  if (typeof texto !== 'string' || !texto.trim()) {
-    return response.status(400).json({
-      mensagem: 'Digite uma mensagem.',
-    })
-  }
+    if (typeof conversaId !== 'string' || !conversaId.trim()) {
+      return response.status(400).json({
+        mensagem: 'Identificador da conversa inválido.',
+      })
+    }
 
-  const textoLimpo = texto.trim()
+    if (typeof texto !== 'string' || !texto.trim()) {
+      return response.status(400).json({
+        mensagem: 'Digite uma mensagem.',
+      })
+    }
 
-  if (textoLimpo.length > 2000) {
-    return response.status(400).json({
-      mensagem: 'A mensagem deve ter no máximo 2.000 caracteres.',
-    })
-  }
+    const textoLimpo = texto.trim()
 
-  try {
-    const resultado = await adicionarMensagem(
-      prisma,
-      usuarioId,
-      conversaId,
-      textoLimpo,
-    )
+    if (textoLimpo.length > 2000) {
+      return response.status(400).json({
+        mensagem: 'A mensagem deve ter no máximo 2.000 caracteres.',
+      })
+    }
 
-    if ('erro' in resultado) {
-      if (resultado.erro === 'CONVERSA_NAO_ENCONTRADA') {
+    try {
+      const resultado = await adicionarMensagem(
+        prisma,
+        usuarioId,
+        conversaId,
+        textoLimpo,
+      )
+
+      if ('erro' in resultado) {
+        if (resultado.erro === 'CONVERSA_NAO_ENCONTRADA') {
+          return response.status(404).json({
+            mensagem: 'Conversa não encontrada.',
+          })
+        }
+
+        return response.status(400).json({
+          mensagem:
+            'Você atingiu o limite de 30 mensagens nesta conversa.',
+        })
+      }
+
+      try {
+        const respostaAgente = await responderConversa(
+          prisma,
+          usuarioId,
+          conversaId,
+        )
+
+        return response.status(201).json({
+          mensagem: resultado.mensagem,
+          respostaAgente,
+          aviso: null,
+        })
+      } catch (erroAgente) {
+        console.error(
+          'Falha ao gerar resposta do agente:',
+          erroAgente,
+        )
+
+        return response.status(201).json({
+          mensagem: resultado.mensagem,
+          respostaAgente: null,
+          aviso:
+            'Sua mensagem foi salva, mas o assistente não conseguiu responder agora.',
+        })
+      }
+    } catch (erro) {
+      console.error('Erro ao salvar mensagem:', erro)
+
+      return response.status(500).json({
+        mensagem: 'Não foi possível salvar a mensagem.',
+      })
+    }
+  },
+)
+
+app.post(
+  '/conversas/:id/responder',
+  autenticar,
+  async (request, response) => {
+    const { id: usuarioId } =
+      response.locals.usuario as UsuarioAutenticado
+
+    const conversaId = request.params.id
+
+    if (typeof conversaId !== 'string' || !conversaId.trim()) {
+      return response.status(400).json({
+        mensagem: 'Identificador da conversa inválido.',
+      })
+    }
+
+    try {
+      const conversa = await prisma.conversa.findFirst({
+        where: {
+          id: conversaId,
+          usuarioId,
+          status: 'COM_AGENTE',
+        },
+        include: {
+          mensagens: {
+            orderBy: { criadoEm: 'desc' },
+            take: 1,
+          },
+        },
+      })
+
+      if (!conversa) {
+        return response.status(404).json({
+          mensagem:
+            'Conversa disponível para o agente não encontrada.',
+        })
+      }
+
+      const ultimaMensagem = conversa.mensagens[0]
+
+      if (
+        !ultimaMensagem ||
+        ultimaMensagem.autor !== 'FUNCIONARIO'
+      ) {
+        return response.status(409).json({
+          mensagem:
+            'Não há uma mensagem do funcionário aguardando resposta.',
+        })
+      }
+
+      if (conversasEmRetentativa.has(conversaId)) {
+        return response.status(409).json({
+          mensagem:
+            'Já existe uma tentativa de resposta em andamento.',
+        })
+      }
+
+      conversasEmRetentativa.add(conversaId)
+
+      try {
+        const respostaAgente = await responderConversa(
+          prisma,
+          usuarioId,
+          conversaId,
+        )
+
+        if (!respostaAgente) {
+          return response.status(409).json({
+            mensagem:
+              'A conversa não está mais disponível para o agente.',
+          })
+        }
+
+        return response.json(respostaAgente)
+      } finally {
+        conversasEmRetentativa.delete(conversaId)
+      }
+    } catch (erro) {
+      console.error('Erro ao tentar responder novamente:', erro)
+
+      return response.status(503).json({
+        mensagem:
+          'Não foi possível gerar a resposta agora. As mensagens continuam salvas.',
+      })
+    }
+  },
+)
+
+app.get(
+  '/conversas/:id/rascunho',
+  autenticar,
+  async (request, response) => {
+    const { id: usuarioId } =
+      response.locals.usuario as UsuarioAutenticado
+
+    const conversaId = request.params.id
+
+    if (typeof conversaId !== 'string' || !conversaId.trim()) {
+      return response.status(400).json({
+        mensagem: 'Identificador da conversa inválido.',
+      })
+    }
+
+    try {
+      const conversa = await prisma.conversa.findFirst({
+        where: {
+          id: conversaId,
+          usuarioId,
+        },
+        select: {
+          rascunho: {
+            select: {
+              id: true,
+              titulo: true,
+              descricao: true,
+              tipo: true,
+              categoria: true,
+              prioridade: true,
+              afetados: true,
+              atualizadoEm: true,
+            },
+          },
+        },
+      })
+
+      if (!conversa) {
         return response.status(404).json({
           mensagem: 'Conversa não encontrada.',
         })
       }
 
-      return response.status(400).json({
-        mensagem: 'Você atingiu o limite de 30 mensagens nesta conversa.',
+      return response.json({
+        rascunho: conversa.rascunho,
+      })
+    } catch (erro) {
+      console.error('Erro ao consultar rascunho:', erro)
+
+      return response.status(500).json({
+        mensagem: 'Não foi possível carregar o rascunho.',
       })
     }
-
-    try {
-      const respostaAgente = await responderConversa(
-        prisma,
-        usuarioId,
-        conversaId,
-      )
-
-      return response.status(201).json({
-        mensagem: resultado.mensagem,
-        respostaAgente,
-        aviso: null,
-      })
-    } catch (erroAgente) {
-      console.error('Falha ao gerar resposta do agente:', erroAgente)
-
-      return response.status(201).json({
-        mensagem: resultado.mensagem,
-        respostaAgente: null,
-        aviso:
-          'Sua mensagem foi salva, mas o assistente não conseguiu responder agora.',
-      })
-    }
-  } catch (erro) {
-    console.error('Erro ao salvar mensagem:', erro)
-
-    return response.status(500).json({
-      mensagem: 'Não foi possível salvar a mensagem.',
-    })
-  }
-})
-
-app.post('/conversas/:id/responder', autenticar, async (request, response) => {
-  const { id: usuarioId } = response.locals.usuario as UsuarioAutenticado
-  const conversaId = request.params.id
-
-  if (typeof conversaId !== 'string' || !conversaId.trim()) {
-    return response.status(400).json({
-      mensagem: 'Identificador da conversa inválido.',
-    })
-  }
-
-  try {
-    const conversa = await prisma.conversa.findFirst({
-      where: {
-        id: conversaId,
-        usuarioId,
-        status: 'COM_AGENTE',
-      },
-      include: {
-        mensagens: {
-          orderBy: { criadoEm: 'desc' },
-          take: 1,
-        },
-      },
-    })
-
-    if (!conversa) {
-      return response.status(404).json({
-        mensagem: 'Conversa disponível para o agente não encontrada.',
-      })
-    }
-
-    const ultimaMensagem = conversa.mensagens[0]
-
-    if (!ultimaMensagem || ultimaMensagem.autor !== 'FUNCIONARIO') {
-      return response.status(409).json({
-        mensagem: 'Não há uma mensagem do funcionário aguardando resposta.',
-      })
-    }
-
-    if (conversasEmRetentativa.has(conversaId)) {
-      return response.status(409).json({
-        mensagem: 'Já existe uma tentativa de resposta em andamento.',
-      })
-    }
-
-    conversasEmRetentativa.add(conversaId)
-
-    try {
-      const respostaAgente = await responderConversa(
-        prisma,
-        usuarioId,
-        conversaId,
-      )
-
-      if (!respostaAgente) {
-        return response.status(409).json({
-          mensagem: 'A conversa não está mais disponível para o agente.',
-        })
-      }
-
-      return response.json(respostaAgente)
-    } finally {
-      conversasEmRetentativa.delete(conversaId)
-    }
-  } catch (erro) {
-    console.error('Erro ao tentar responder novamente:', erro)
-
-    return response.status(503).json({
-      mensagem:
-        'Não foi possível gerar a resposta agora. As mensagens continuam salvas.',
-    })
-  }
-})
-
-app.get('/conversas/:id/rascunho', autenticar, async (request, response) => {
-  const { id: usuarioId } = response.locals.usuario as UsuarioAutenticado
-  const conversaId = request.params.id
-
-  if (typeof conversaId !== 'string' || !conversaId.trim()) {
-    return response.status(400).json({
-      mensagem: 'Identificador da conversa inválido.',
-    })
-  }
-
-  try {
-    const conversa = await prisma.conversa.findFirst({
-      where: {
-        id: conversaId,
-        usuarioId,
-      },
-      select: {
-        rascunho: {
-          select: {
-            id: true,
-            titulo: true,
-            descricao: true,
-            tipo: true,
-            categoria: true,
-            prioridade: true,
-            afetados: true,
-            atualizadoEm: true,
-          },
-        },
-      },
-    })
-
-    if (!conversa) {
-      return response.status(404).json({
-        mensagem: 'Conversa não encontrada.',
-      })
-    }
-
-    return response.json({
-      rascunho: conversa.rascunho,
-    })
-  } catch (erro) {
-    console.error('Erro ao consultar rascunho:', erro)
-
-    return response.status(500).json({
-      mensagem: 'Não foi possível carregar o rascunho.',
-    })
-  }
-})
+  },
+)
 
 app.post(
   '/conversas/:id/rascunho/:rascunhoId/confirmar',
   autenticar,
   async (request, response) => {
-    const { id: usuarioId } = response.locals.usuario as UsuarioAutenticado
+    const { id: usuarioId } =
+      response.locals.usuario as UsuarioAutenticado
+
     const conversaId = request.params.id
     const rascunhoId = request.params.rascunhoId
 
@@ -406,7 +465,8 @@ app.post(
 
     if (!validacao.success) {
       return response.status(400).json({
-        mensagem: 'Os dados da confirmação estão incompletos ou inválidos.',
+        mensagem:
+          'Os dados da confirmação estão incompletos ou inválidos.',
       })
     }
 
@@ -449,7 +509,8 @@ app.post(
 
         case 'CONVERSA_INDISPONIVEL':
           return response.status(409).json({
-            mensagem: 'A conversa não está disponível para confirmação.',
+            mensagem:
+              'A conversa não está disponível para confirmação.',
           })
 
         default:
@@ -472,7 +533,9 @@ app.delete(
   '/conversas/:id/rascunho/:rascunhoId',
   autenticar,
   async (request, response) => {
-    const { id: usuarioId } = response.locals.usuario as UsuarioAutenticado
+    const { id: usuarioId } =
+      response.locals.usuario as UsuarioAutenticado
+
     const conversaId = request.params.id
     const rascunhoId = request.params.rascunhoId
 
@@ -501,7 +564,8 @@ app.delete(
 
       if (resultado.status === 'CONVERSA_INDISPONIVEL') {
         return response.status(409).json({
-          mensagem: 'A conversa não está disponível para cancelar o rascunho.',
+          mensagem:
+            'A conversa não está disponível para cancelar o rascunho.',
         })
       }
 
@@ -522,7 +586,9 @@ app.patch(
   '/conversas/:id/rascunho/:rascunhoId',
   autenticar,
   async (request, response) => {
-    const { id: usuarioId } = response.locals.usuario as UsuarioAutenticado
+    const { id: usuarioId } =
+      response.locals.usuario as UsuarioAutenticado
+
     const conversaId = request.params.id
     const rascunhoId = request.params.rascunhoId
 
@@ -561,7 +627,8 @@ app.patch(
 
       if (resultado.status === 'CONVERSA_INDISPONIVEL') {
         return response.status(409).json({
-          mensagem: 'A conversa não está disponível para editar o rascunho.',
+          mensagem:
+            'A conversa não está disponível para editar o rascunho.',
         })
       }
 
@@ -577,6 +644,103 @@ app.patch(
     }
   },
 )
+
+app.post(
+  '/conversas/:id/transferir',
+  autenticar,
+  async (request, response) => {
+    const { id: usuarioId } =
+      response.locals.usuario as UsuarioAutenticado
+
+    const conversaId = request.params.id
+
+    if (typeof conversaId !== 'string' || !conversaId.trim()) {
+      return response.status(400).json({
+        mensagem: 'Identificador da conversa inválido.',
+      })
+    }
+
+    try {
+      const resultado = await transferirParaAnalista(
+        prisma,
+        usuarioId,
+        conversaId,
+      )
+
+      switch (resultado.status) {
+        case 'ENCAMINHADA':
+        case 'JA_ENCAMINHADA':
+          return response.json(resultado)
+
+        case 'CONVERSA_NAO_ENCONTRADA':
+          return response.status(404).json({
+            mensagem: 'Conversa não encontrada.',
+          })
+
+        case 'CONVERSA_ENCERRADA':
+          return response.status(409).json({
+            mensagem: 'Esta conversa já foi encerrada.',
+          })
+
+        default:
+          return response.status(409).json({
+            mensagem:
+              'O estado da conversa mudou. Recarregue a página.',
+          })
+      }
+    } catch (erro) {
+      console.error('Erro ao transferir conversa:', erro)
+
+      return response.status(500).json({
+        mensagem: 'Não foi possível encaminhar a conversa.',
+      })
+    }
+  },
+)
+
+app.get('/conversas/:id', autenticar, async (request, response) => {
+  const { id: usuarioId } = response.locals.usuario as UsuarioAutenticado
+  const conversaId = request.params.id
+
+  if (typeof conversaId !== 'string' || !conversaId.trim()) {
+    return response.status(400).json({
+      mensagem: 'Identificador da conversa inválido.',
+    })
+  }
+
+  try {
+    const conversa = await prisma.conversa.findFirst({
+      where: {
+        id: conversaId,
+        usuarioId,
+      },
+      include: {
+        mensagens: {
+          orderBy: { criadoEm: 'asc' },
+          include: {
+            acoes: {
+              orderBy: { criadoEm: 'asc' },
+            },
+          },
+        },
+      },
+    })
+
+    if (!conversa) {
+      return response.status(404).json({
+        mensagem: 'Conversa não encontrada.',
+      })
+    }
+
+    return response.json(conversa)
+  } catch (erro) {
+    console.error('Erro ao atualizar conversa:', erro)
+
+    return response.status(500).json({
+      mensagem: 'Não foi possível atualizar a conversa.',
+    })
+  }
+})
 
 app.listen(PORT, () => {
   console.log(`Servidor rodando em http://localhost:${PORT}`)

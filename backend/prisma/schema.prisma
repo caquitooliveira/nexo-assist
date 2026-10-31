@@ -12,9 +12,13 @@ model Usuario {
   nome      String
   email     String   @unique
   criadoEm  DateTime @default(now())
+  
 
   chamados  Chamado[]
-  conversas Conversa[]
+  conversas    Conversa[] @relation("ConversasFuncionario")
+  atendimentos Conversa[] @relation("ConversasAnalista")
+
+  papel String @default("FUNCIONARIO")
 }
 
 model Chamado {
@@ -48,7 +52,9 @@ model Conversa {
   atualizadoEm DateTime @updatedAt
 
   usuarioId    String
-  usuario      Usuario  @relation(fields: [usuarioId], references: [id])
+  usuario Usuario @relation("ConversasFuncionario", fields: [usuarioId], references: [id])
+  analistaId String?
+  analista   Usuario? @relation("ConversasAnalista", fields: [analistaId], references: [id])
   mensagens    Mensagem[]
 
   rascunho RascunhoChamado?

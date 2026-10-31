@@ -1,3 +1,4 @@
+import type { PrismaClient } from '@prisma/client'
 import type { NextFunction, Request, Response } from 'express'
 import jwt from 'jsonwebtoken'
 
@@ -36,11 +37,45 @@ export function autenticar(
       })
     }
 
-    response.locals.usuario = { id: payload.sub } satisfies UsuarioAutenticado
+    response.locals.usuario = {
+      id: payload.sub,
+    } satisfies UsuarioAutenticado
+
     next()
   } catch {
     return response.status(401).json({
       mensagem: 'Sessão inválida ou expirada. Faça login novamente.',
     })
+  }
+}
+
+export function exigirAnalista(prisma: PrismaClient) {
+  return async (
+    _request: Request,
+    response: Response,
+    next: NextFunction,
+  ) => {
+    const { id } = response.locals.usuario as UsuarioAutenticado
+
+    try {
+      const usuario = await prisma.usuario.findUnique({
+        where: { id },
+        select: { papel: true },
+      })
+
+      if (usuario?.papel !== 'ANALISTA') {
+        return response.status(403).json({
+          mensagem: 'Este recurso é exclusivo dos analistas.',
+        })
+      }
+
+      next()
+    } catch (erro) {
+      console.error('Erro ao verificar acesso do analista:', erro)
+
+      return response.status(500).json({
+        mensagem: 'Não foi possível verificar sua permissão.',
+      })
+    }
   }
 }

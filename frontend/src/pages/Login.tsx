@@ -43,7 +43,11 @@ async function handleLogin(event: React.FormEvent<HTMLFormElement>) {
     armazenamento.setItem('nexo-token', dados.token)
     armazenamento.setItem('nexo-usuario', JSON.stringify(dados.usuario))
 
-    navigate('/atendimento')
+    navigate(
+  dados.usuario.papel === 'ANALISTA'
+    ? '/analista'
+    : '/atendimento',
+)
   } catch {
     setErro('Não foi possível conectar ao servidor. Verifique se ele está ligado.')
   } finally {
